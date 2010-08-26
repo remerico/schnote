@@ -4,8 +4,11 @@ SettingsImpl* SettingsImpl::instance = new SettingsImpl();
 
 SettingsImpl::SettingsImpl(QObject *parent) :
     QObject(parent)
+#ifdef Q_WS_WIN32
+    , settings("settings.ini", QSettings::IniFormat)
+#endif
 {
-    settings.setDefaultFormat(QSettings::IniFormat);
+
 }
 
 void SettingsImpl::loadSettings() {

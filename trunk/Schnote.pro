@@ -27,7 +27,6 @@ SOURCES += src/main.cpp\
     src/ui/widgets/noteitemdelegate.cpp \
     src/data/notelistmodel.cpp \
     src/data/notedb.cpp \
-    src/data/notesync.cpp \
     src/ui/settingswindow.cpp \
     src/data/settings.cpp
 
@@ -41,7 +40,6 @@ HEADERS  += src/ui/mainwindow.h \
     src/data/notelistmodel.h \
     src/data/notedb.h \
     src/data/notedata.h \
-    src/data/notesync.h \
     src/ui/settingswindow.h \
     src/data/settings.h
 
