@@ -6,6 +6,8 @@
 #include <QThread>
 #include <QQueue>
 #include <QVariant>
+#include <QScriptValueIterator>
+#include <QScriptEngine>
 
 #include <vector>
 #include <string>
@@ -27,7 +29,8 @@ namespace SimpleNote {
 
         QString user;
         QString password;
-        QString token;
+
+        bool isEmpty() { return user.isEmpty() || password.isEmpty(); }
     };
 
     class Api : public QThread
@@ -69,28 +72,29 @@ namespace SimpleNote {
         };
 
 
-        template<typename T, typename T2>
-        struct JsonData {
-            T data;
-            T2 tempData;
-            QString lastKey;
+        enum ErrorCode {
+            INVALID_ACCOUNT,
+            INVALID_NOTE,
+            SEREVER_ERROR,
+            CONNECTION_ERROR
         };
 
     private:
 
         Account _account;
+        QString _token;
         QQueue<Task> _taskQueue;
 
         CurlProxy _proxy;
 
         bool _login();
-        NoteIndexHash _getNoteIndices();
+        NoteIndexHash _getNoteIndices(QDateTime since = QDateTime());
         Note _getNote(QString index);
         NoteList _getNotes();
         QString _createNote(const Note& note);
-        bool _updateNote(const Note& note);
+        NoteIndex _updateNote(const Note& note, bool &ok = true);
         void _syncNotes();
-        void _deleteNote(const QString& key, bool permanent = false);
+        void _deleteNote(const NoteIndex& noteIndex, bool permanent = false);
 
         // Thread task functions
         bool _taskContains(Task::Description description);
@@ -99,6 +103,11 @@ namespace SimpleNote {
         // Utility functions
         static QDateTime fromApiDate(const QString& dateString);
         static QString toApiDate(const QDateTime& date);
+        static NoteIndex responseToNoteIndex(const QScriptValue& response);
+        static Note responseToNote(const QScriptValue& response);
+        static NoteIndex responseToNoteIndex(const QString& response);
+        static Note responseToNote(const QString& response);
+
 
     public:
         Api();
@@ -115,7 +124,7 @@ namespace SimpleNote {
     public slots:
         void createNote(const Note& note);
         void updateNote(const Note& note);
-        void deleteNote(const QString& key, bool permanent = false);
+        void deleteNote(const NoteIndex& noteIndex, bool permanent = false);
 
         void setAccount(const SimpleNote::Account &account) { _account = account; }
         void setAccount(const QString &username, const QString &password) { _account = Account(username, password); }
@@ -123,7 +132,6 @@ namespace SimpleNote {
 
     protected:
         virtual void run();
-        //static int parseNoteIndex(void *userdata, int type, const char *data, uint32_t length);
 
     signals:
         void acquiredToken(const QString &token);

@@ -13,6 +13,8 @@
 
 #if ENABLE_CURL
 
+#define PROXY_PORT 3128L    //TODO: Hardcoded! :D
+
 CurlObject::CurlObject() {
 
     _handle = curl_easy_init();
@@ -24,6 +26,7 @@ CurlObject::CurlObject() {
     curl_easy_setopt(_handle, CURLOPT_HEADERFUNCTION, headerCallback);
 
     // turn off SSL cert verification
+    // doesn't work with Simplenote API server
     curl_easy_setopt(_handle, CURLOPT_SSL_VERIFYPEER, 0);
 
     initialize();
@@ -38,6 +41,7 @@ CurlObject::~CurlObject() {
 void CurlObject::setProxy(CurlProxy proxy) {
     if (!proxy.isEmpty()) {
         curl_easy_setopt(_handle, CURLOPT_PROXY, proxy.url.toUtf8().data());
+        curl_easy_setopt(_handle, CURLOPT_PROXYPORT, PROXY_PORT);
 
         if (!proxy.user.isEmpty() || !proxy.password.isEmpty()) {
             QString proxyAuth(proxy.user + ":" + proxy.password);
@@ -58,8 +62,8 @@ void CurlObject::setUrl(const char* url) {
     //qDebug() << "URL is " << url << "\n";
 }
 
-void CurlObject::setPostData(const char* data) {
-     curl_easy_setopt(_handle, CURLOPT_COPYPOSTFIELDS, data);
+void CurlObject::setPostData(const QString& data) {
+     curl_easy_setopt(_handle, CURLOPT_COPYPOSTFIELDS, data.constData());
      //qDebug() << "Post data is " << data << "\n";
 }
 
@@ -85,7 +89,7 @@ size_t CurlObject::writeCallback(char *data, size_t size, size_t nmemb, QByteArr
     // Is there anything in the buffer?
     if (data && buffer) {
         result = size * nmemb;      // How much did we write?
-        buffer->append(QString(data).left(result));       // Append the data to the buffer
+        buffer->append(QString::fromUtf8(data, result).left(result));       // Append the data to the buffer
     }
 
     return result;

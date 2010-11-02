@@ -13,17 +13,14 @@ class SettingsImpl : public QObject
 public:
     inline static SettingsImpl* getInstance() { return instance; }
 
-    void loadSettings();
-
     SimpleNote::Account getAccount();
     CurlProxy getProxy();
+    QDateTime getLastSyncDate();
 
 private:
     SettingsImpl(QObject *parent = 0);
 
     static SettingsImpl* instance;
-
-    QSettings settings;
 
 signals:
     void accountChanged(const SimpleNote::Account &account);
@@ -32,6 +29,7 @@ signals:
 public slots:
     void setAccount(const SimpleNote::Account &account);
     void setProxy(const CurlProxy &proxy);
+    void setLastSyncDate(QDateTime dateTime);
 
 };
 

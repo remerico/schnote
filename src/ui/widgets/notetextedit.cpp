@@ -1,9 +1,9 @@
 #include "notetextedit.h"
 
 
-NoteTextEdit::NoteTextEdit(QWidget *parent) : QTextEdit(parent) {
+NoteTextEdit::NoteTextEdit(QWidget *parent) : QPlainTextEdit(parent) {
     //setFontPointSize(12);
-    setFont(QFont("Courier", 10));
+    //setFont(QFont("Courier", 10));
 }
 
 void NoteTextEdit::paintEvent(QPaintEvent *e) {
@@ -12,7 +12,7 @@ void NoteTextEdit::paintEvent(QPaintEvent *e) {
 
 #ifdef AYAW_GUMANA
 
-    QTextEdit::paintEvent(e);
+    QPlainTextEdit::paintEvent(e);
 
 #else
 
