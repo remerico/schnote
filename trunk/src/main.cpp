@@ -1,5 +1,9 @@
 #include <QtGui/QApplication>
 #include "ui/mainwindow.h"
+#include "data/settings.h"
+#include <QDateTime>
+
+#include <QtDebug>
 
 int main(int argc, char *argv[])
 {
@@ -7,6 +11,7 @@ int main(int argc, char *argv[])
 
     a.setOrganizationDomain("schnote.org");
     a.setApplicationName("Schnote");
+
 
     MainWindow w;
 

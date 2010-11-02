@@ -6,11 +6,14 @@
 #include <QTextStream>
 #include <QtDebug>
 #include <QThread>
+#include <QUrl>
 
-#include <QScriptValueIterator>
-#include <QScriptEngine>
+#include "../data/settings.h"
+
+#define API2_BASE_URL(path) "https://simple-note.appspot.com/api2/" path
 
 using namespace SimpleNote;
+
 
 Api::Api() { }
 
@@ -60,7 +63,7 @@ void Api::run() {
             break;
 
         case Task::DELETE_NOTE:
-            _deleteNote(task.parameter.at(0).toString(), task.parameter.at(1).toBool());
+            _deleteNote(qvariant_cast<NoteIndex>(task.parameter.at(0)), task.parameter.at(1).toBool());
             break;
 
         }
@@ -68,6 +71,9 @@ void Api::run() {
     }
 
     qDebug() << "API thread finished.";
+
+    // Clear token when all task are finished
+    _token.clear();
 
 }
 
@@ -103,9 +109,9 @@ void Api::syncNotes() {
     _enqueueTask(Task(Task::SYNC_NOTES));
 }
 
-void Api::deleteNote(const QString &key, bool permanent) {
+void Api::deleteNote(const NoteIndex& noteIndex, bool permanent) {
     QList<QVariant> parameters;
-    parameters.append(key);
+    parameters.append(QVariant::fromValue(noteIndex));
     parameters.append(permanent);
 
     _enqueueTask(Task(Task::DELETE_NOTE, parameters));
@@ -117,6 +123,17 @@ void Api::deleteNote(const QString &key, bool permanent) {
 
 
 bool Api::_login() {
+
+    if (!_token.isEmpty()) {
+        qDebug() << "Using existing token...";
+        return true;
+    }
+
+    if (_account.isEmpty()) {
+        qDebug() << "Account is empty, cannot login.";
+        return false;
+    }
+
 
     qDebug() << "Logging in...";
 
@@ -132,108 +149,93 @@ bool Api::_login() {
     curl.perform();
 
     if (curl.getResponseCode() == 200) {
-        _account.token = curl.getResponseBody();
+        _token = curl.getResponseBody();
+        qDebug() << "Token:" << _token;
         emit acquiredToken(curl.getResponseBody());
         return true;
     }
     else {
-        qDebug() << "Login ERROR! " << curl.getResponseCode();
+        qDebug() << "Login error: " << curl.getResponseCode();
         qDebug() << "Response: " << curl.getResponseBody();
         return false;
     }
 
 
-
 }
 
 
-NoteIndexHash Api::_getNoteIndices() {
+NoteIndexHash Api::_getNoteIndices(QDateTime since) {
 
-    if (!_account.token.length()) _login();
+    NoteIndexHash indexHash;
 
-    if (_account.token.length()) {
+    if (_login()) {
 
-        QString url = "http://simple-note.appspot.com/api/index?auth=" + _account.token + "&email=" + _account.user;
-
-        CurlObject curl;
-
-        curl.setProxy(_proxy);
-        curl.setUrl(url.toAscii().data());
-        curl.perform();
+        int length = 20;        // 20 indices per request
+        QString mark;
 
 
-        // Parse JSON data
+        // request until no more indices left
+        do {
 
-        NoteIndexHash indexHash;
+            QUrl url(API2_BASE_URL("index"));
+
+            url.addQueryItem("auth", _token);
+            url.addQueryItem("email", _account.user);
+            url.addQueryItem("length", QString::number(length));
+            if (!mark.isEmpty()) url.addQueryItem("mark", mark);
+            if (!since.isNull()) url.addQueryItem("since", toApiDate(since));
+
+            qDebug() << "Index URL:" << url.toString();
+
+            CurlObject curl;
+
+            curl.setProxy(_proxy);
+            curl.setUrl(url.toString().toAscii().data());
+            curl.perform();
 
 
-        QScriptEngine engine;
-        QScriptValue scriptValue;
+            QScriptEngine engine;
+            QScriptValue scriptValue;
+            QScriptValue noteData;
 
-        //qDebug() << "Response: " << curl.getResponseBody();
-        scriptValue = engine.evaluate(curl.getResponseBody());
 
-        if (scriptValue.isArray()) {
+            scriptValue = engine.evaluate("(" + curl.getResponseBody() + ")");
 
-            QScriptValueIterator itr(scriptValue);
+            //qDebug() << "count:" << scriptValue.property("count").toString();
 
-            while (itr.hasNext()) {
-                itr.next();
+            // if mark is not empty, there is another page left
+            noteData = scriptValue.property("data");
+            mark = scriptValue.property("mark").toString();
 
-                NoteIndex noteIndex;
 
-                noteIndex.key = itr.value().property("key").toString();
-                noteIndex.modifyDate = fromApiDate(itr.value().property("modify").toString());
-                noteIndex.deleted = itr.value().property("deleted").toBool();
+            if (noteData.isArray()) {
 
-                //qDebug() << "key:" << noteIndex.key << " modify:" << noteIndex.modifyDate << " deleted:" << noteIndex.deleted;
+                QScriptValueIterator itr(noteData);
 
-                indexHash.insert(noteIndex.key, noteIndex);
+                while (itr.hasNext()) {
+                    itr.next();
+
+                    NoteIndex noteIndex = responseToNoteIndex(itr.value());
+
+                    if (!noteIndex.key.isEmpty()) {
+                        //qDebug() << "key:" << noteIndex.key << " modify:" << noteIndex.modifyDate << " deleted:" << noteIndex.deleted;
+                        indexHash.insert(noteIndex.key, noteIndex);
+                    }
+
+                }
+
             }
 
-        }
-
-        qDebug() << "Note index hash count: " << indexHash.count();
+            qDebug() << "Note index hash count: " << indexHash.count();
 
 
-        return indexHash;
+        } while (!mark.isEmpty());
 
-
-
-        // TODO: Cleanup this code / separate JSON parsing to another class
-        /*
-        json_parser parser;
-        JsonData<NoteIndexHash, NoteIndex> indexHash;
-
-        if (json_parser_init(&parser, NULL, parseNoteIndex, &indexHash) == 0) {
-
-            QString json_data = curl.getResponseBody();
-
-            const char *c_data = json_data.toLatin1().data();
-            int length = json_data.length();
-
-            int ret = json_parser_string(&parser, c_data, length, NULL);
-            if (ret) {
-                std::cout << "JSON error: " << ret << "  data:  " << c_data << "\n";
-            }
-
-            json_parser_free(&parser);
-
-        }
-
-        if (curl.getResponseCode() == 200) {
-            emit receivedNoteIndices(indexHash.data);
-        }
-
-        qDebug() << "API notes count: " << indexHash.data.count();
-
-        return indexHash.data;
-        */
 
     }
 
 
-    return NoteIndexHash();
+    return indexHash;
 
 }
 
@@ -242,11 +244,9 @@ Note Api::_getNote(QString id) {
 
     Note note;
 
-    if (!_account.token.length()) _login();
+    if (_login()) {
 
-    if (_account.token.length()) {
-
-        QString url = "http://simple-note.appspot.com/api/note?key=" + id + "&auth=" + _account.token + "&email=" + _account.user;
+        QString url = "http://simple-note.appspot.com/api/note?key=" + id + "&auth=" + _token + "&email=" + _account.user;
 
         CurlObject curl;
 
@@ -294,28 +294,29 @@ NoteList Api::_getNotes() {
 
 QString Api::_createNote(const Note &note) {
 
+    if (_login()) {
 
-    if (!_account.token.length()) _login();
+        QUrl url(API2_BASE_URL("data"));
+        url.addQueryItem("auth", _token);
+        url.addQueryItem("email", _account.user);
 
-    if (_account.token.length()) {
-
-        QString url = "http://simple-note.appspot.com/api/note?auth=" + _account.token +
-                      "&email=" + _account.user +
-                      (note.index.creationDate.isValid() ?
-                            "&create=" + toApiDate(note.index.creationDate).replace(" ", "%20") : "") +
-                      (note.index.modifyDate.isValid() ?
-                            "&modify=" + toApiDate(note.index.modifyDate).replace(" ", "%20") : "");
 
         CurlObject curl;
 
         curl.setProxy(_proxy);
-        curl.setUrl(url.toAscii().data());
+        curl.setUrl(url.toString().toAscii().data());
 
-        qDebug() << "Note data: " << note.data;
+        qDebug() << "Note data: " << note.content;
 
+        QString data = note.content;
+        data.replace('"', "\"");
 
-        // Setup POST data
-        curl.setEncodedPostData(note.data);
+        curl.setPostData("{"
+                        "\"content\" : \"" + data + "\"" +
+                        (note.index.modifyDate.isNull() ? ", \"modifydate\" : \"" + toApiDate(note.index.modifyDate) + "\"" : "") +
+                        (note.index.creationDate.isNull() ? ", \"createdate\" : \"" + toApiDate(note.index.creationDate) + "\"" : "") +
+                        "}");
+
         curl.perform();
 
 
@@ -323,13 +324,15 @@ QString Api::_createNote(const Note &note) {
 
         if (curl.getResponseCode() == 200) {
 
-            // Auto update DB record from here
+            QScriptEngine engine;
+            QScriptValue value = engine.evaluate("(" + curl.getResponseBody() + ")");
+
             Note nt = note;
-            nt.index.key = curl.getResponseBody();
+            nt.index.key = value.property("key").toString();
             if (nt.index.id >= 0) NoteDB->updateNote(nt, false);
 
-            emit createNoteFinished(curl.getResponseBody());
-            return curl.getResponseBody();
+            emit createNoteFinished(nt.index.key);
+            return nt.index.key;
         }
         else {
             qDebug() << "Create note ERROR! " << curl.getResponseCode();
@@ -342,56 +345,54 @@ QString Api::_createNote(const Note &note) {
 }
 
 
-bool Api::_updateNote(const Note &note) {
+NoteIndex Api::_updateNote(const Note &note, bool &ok) {
 
-    qDebug() << "  Updating API note...";
+    if (_login()) {
 
-    if (!_account.token.length()) _login();
+        qDebug() << "  Updating API note...";
 
-    if (_account.token.length()) {
+        QUrl url(API2_BASE_URL("data/") + note.index.key);
+        url.addQueryItem("auth", _token);
+        url.addQueryItem("email", _account.user);
 
-        QString url = "http://simple-note.appspot.com/api/note?key=" + note.index.key +
-                      "&auth=" + _account.token +
-                      "&email=" + _account.user +
-                      (note.index.modifyDate.isValid() ? "&modify=" + toApiDate(note.index.modifyDate).replace(" ", "%20") : "" );
 
         CurlObject curl;
 
         curl.setProxy(_proxy);
-        curl.setUrl(url.toAscii().data());
+        curl.setUrl(url.toString().toAscii().data());
 
-        qDebug() << "Note title: " << note.index.title;
+        qDebug() << "Update Note: " << note.index.title;
 
-        // Setup POST data
-        qDebug() << "  Update data: " << note.data;
+        QString data = note.content;
+        data.replace('"', "\"");
 
-        curl.setEncodedPostData(note.data);
+        curl.setPostData("{"
+                        "\"content\" : \"" + data + "\"" +
+                        (note.index.modifyDate.isNull() ? ", \"modifydate\" : \"" + toApiDate(note.index.modifyDate) + "\"" : "") +
+                        (note.index.creationDate.isNull() ? ", \"createdate\" : \"" + toApiDate(note.index.creationDate) + "\"" : "") +
+                        "\"deleted\" : \"" + (note.index.deleted ? "true" : "false") + "\"" +
+                        "}");
+
         curl.perform();
 
-        qDebug() << "Update response: " << curl.getResponseBody();
-
         if (curl.getResponseCode() == 200) {
-            return true;
+            qDebug() << "Note updated.";
+            return responseToNoteIndex(curl.getResponseBody());
         }
         else {
-            qDebug() << "Update note ERROR! " << curl.getResponseCode();
+            qDebug() << "Update note ERROR! " << curl.getResponseCode();            
         }
 
     }
 
-    return false;
+    return NoteIndex();
 
 }
 
 
 void Api::_syncNotes() {
 
-    if (_account.token.isEmpty()) {
-        qDebug() << "Account token is empty";
-        _login();
-    }
-
-    if (_account.token.length()) {
+    if (_login()) {
 
         // Get new unsynchronized notes from DB
         NoteIndexList newNotes = NoteDB->getNoteIndicesWithoutKeys();
@@ -423,14 +424,18 @@ void Api::_syncNotes() {
             if (apiNotes.contains(dbNote.key)) {
                 NoteIndex apiNote = apiNotes.value(dbNote.key, dbNote);
 
-                if (dbNote.modifyDate > apiNote.modifyDate) {
+                if (dbNote.modifyDate > apiNote.modifyDate && apiNote.deleted == false) {
 
                     qDebug() << "\n\n" << dbNote.modifyDate << " > " << apiNote.modifyDate;
                     qDebug() << "DB note is newer than API";
 
+
+                    // DB note deleted
                     if (dbNote.deleted && !apiNote.deleted) {
-                        _deleteNote(dbNote.key);
+                        _deleteNote(dbNote);
                     }
+
+                    // Both existing
                     else if (!dbNote.deleted && !apiNote.deleted) {
                         _updateNote(NoteDB->getNoteById(dbNote.id));
                     }
@@ -438,8 +443,7 @@ void Api::_syncNotes() {
                 }
 
                 // Both client and server are marked as deleted
-                // Delete permanently (unless iPhone compatibility
-                // is enabled.)
+                // Delete permanently
                 else if (dbNote.deleted && apiNote.deleted) {                    
                     NoteDB->removeNoteById(dbNote.id, true);
 
@@ -480,7 +484,7 @@ void Api::_syncNotes() {
                             NoteDB->removeNoteById(dbNote.id, true);
                         }
 
-                        // Delete API note permanently (unless iPhone compatibility is set)
+                        // Delete API note permanently
                         // EDIT: Doesn't work for now anyway. Stupid API >:P
                         //_deleteNote(apiNote.key, true);
                     }
@@ -496,7 +500,7 @@ void Api::_syncNotes() {
                     NoteDB->addNote(_getNote(apiNote.key));
                 }
 
-                // Otherwise delete it permanently (unless iPhone compatibility is set)
+                // Otherwise delete it permanently
                 // EDIT: Doesn't work for now anyway. Stupid API >:P
                 //else _deleteNote(apiNote.key, true);
             }
@@ -505,6 +509,9 @@ void Api::_syncNotes() {
 
         NoteDB->setAllSynchronized();
 
+
+        Settings->setLastSyncDate(QDateTime::currentDateTimeUtc());
+
         emit syncNotesFinished();
 
     }
@@ -512,27 +519,44 @@ void Api::_syncNotes() {
 }
 
 
-void Api::_deleteNote(const QString &key, bool permanent) {
+void Api::_deleteNote(const NoteIndex& noteIndex, bool permanent) {
 
-    if (!_account.token.length()) _login();
+    if (_login()) {
 
-    if (_account.token.length()) {
 
-        QString url = "http://simple-note.appspot.com/api/delete?key=" + key +
-                      "&auth=" + _account.token +
-                      "&email=" + _account.user +
-                      (permanent ? "&dead=1" : "");
+        // Non-permanent delete
+        if (!permanent || (!noteIndex.deleted && permanent)) {
 
-        CurlObject curl;
+            QUrl url(API2_BASE_URL("data/") + noteIndex.key);
+            url.addQueryItem("auth", _token);
+            url.addQueryItem("email", _account.user);
 
-        curl.setProxy(_proxy);
-        curl.setUrl(url.toAscii().data());
+            CurlObject curl;
 
-        qDebug() << "Deleting API note: " << key << (permanent ? " permanently!" : "");
+            curl.setProxy(_proxy);
+            curl.setUrl(url.toString().toAscii().data());
 
-        curl.perform();
+            curl.setPostData("{\"deleted\" : 1}");
 
-        qDebug() << "Delete response: " << curl.getResponseBody();
+            qDebug() << "Deleting API note: " << noteIndex.key;
+
+            curl.perform();
+
+            qDebug() << "Delete response: " << curl.getResponseBody();
+
+        }
+
+
+        // permanent delete
+        else if (permanent) {
+
+
+
+            // WALA PA
+
+
+        }
+
 
     }
 
@@ -567,13 +591,11 @@ void Api::_enqueueTask(const Task &task) {
 
 QDateTime Api::fromApiDate(const QString& dateString) {
 
-    QString dateStr(dateString);
-    dateStr.truncate(19);    // force truncate milliseconds >:P
 
-    QDateTime date = QDateTime::fromString(dateStr, "yyyy-MM-dd hh:mm:ss");
+    QDateTime date = QDateTime::fromMSecsSinceEpoch( dateString.toFloat() * 1000 );
     date.setTimeSpec(Qt::UTC);
 
-    //qDebug() << "from API date: " << dateStr << " ---> " << date;
+    //qDebug() << "from API date: " << dateString << " ---> " << date;
 
     return date;
 }
@@ -583,61 +605,61 @@ QString Api::toApiDate(const QDateTime &date) {
     QDateTime apiDate(date);
     apiDate.setTimeSpec(Qt::UTC);
 
-    return apiDate.toString("yyyy-MM-dd hh:mm:ss");
+    return QString::number( ((float)date.toMSecsSinceEpoch() / 1000) );
 
 }
 
+NoteIndex Api::responseToNoteIndex(const QScriptValue& response) {
 
-//----------------------------------------------------------------
-// JSON parse functions (clean this up!)
-/*
-int Api::parseNoteIndex(void *userdata, int type, const char *data, uint32_t length) {
+    NoteIndex noteIndex;
 
-    JsonData<NoteIndexHash, NoteIndex>* jsonData = (JsonData<NoteIndexHash, NoteIndex>*)userdata;
+    noteIndex.key = response.property("key").toString();
+    noteIndex.deleted = response.property("deleted").toBool();
+    noteIndex.modifyDate = fromApiDate(response.property("modifydate").toString());
+    noteIndex.creationDate = fromApiDate(response.property("createdate").toString());
+    noteIndex.version = response.property("version").toInteger();
+    noteIndex.minversion = response.property("minversion").toInteger();
+    noteIndex.syncNum = response.property("syncnum").toInteger();
 
-    switch (type) {
-        case JSON_ARRAY_BEGIN:
-        case JSON_ARRAY_END:
-            break;
-
-        case JSON_OBJECT_END:
-            jsonData->data.insert(jsonData->tempData.key, jsonData->tempData);
-            break;
-
-        case JSON_OBJECT_BEGIN:
-            jsonData->tempData = NoteIndex();
-            break;
-
-        if (!jsonData->data.isEmpty()) {
-
-            case JSON_KEY:
-                jsonData->lastKey = data;
-                break;
-
-            case JSON_STRING:
-                if (jsonData->lastKey.compare("key") == 0) {
-                    jsonData->tempData.key = data;
-                }
-                else if (jsonData->lastKey.compare("modify") == 0) {
-                    jsonData->tempData.modifyDate = fromApiDate(data);
-                }
-                break;
-
-            case JSON_TRUE:
-            case JSON_FALSE:
-                if (jsonData->lastKey.compare("deleted") == 0) {
-                    jsonData->tempData.deleted = (type == JSON_TRUE);
-                }
-                break;
-
-            case JSON_INT:
-            case JSON_FLOAT:
-            case JSON_NULL:
-                break;
-
-        } //end if
-
+    // tags
+    if (response.property("tags").isArray()) {
+        QScriptValueIterator tagitr(response.property("tags"));
+        while(tagitr.hasNext()) {
+            tagitr.next();
+            noteIndex.tags.append(tagitr.value().toString() + " ");
+        }
     }
-    return 0;
+
+    // system tags
+    if (response.property("systemtags").isArray()) {
+        QScriptValueIterator tagitr(response.property("systemtags"));
+        while(tagitr.hasNext()) {
+            tagitr.next();
+            noteIndex.systemTags.append(tagitr.value().toString() + " ");
+        }
+    }
+
+    return noteIndex;
+
 }
-*/
+
+Note Api::responseToNote(const QScriptValue& response) {
+
+    Note note;
+
+    note.index = responseToNoteIndex(response);
+    note.content = response.property("content");
+
+    return note;
+
+}
+
+NoteIndex Api::responseToNoteIndex(const QString& response) {
+    QScriptEngine engine;
+    return responseToNoteIndex(engine.evaluate(response));
+}
+
+Note Api::responseToNote(const QString& response) {
+    QScriptEngine engine;
+    return responseToNote(engine.evaluate(response));
+}

@@ -1,25 +1,28 @@
 #include "src/data/settings.h"
 
+#ifdef Q_WS_WIN32
+    #define SETTINGS QSettings settings("settings.ini", QSettings::IniFormat)
+#else
+    #define SETTINGS QSettings settings
+#endif
+
+
 SettingsImpl* SettingsImpl::instance = new SettingsImpl();
 
 SettingsImpl::SettingsImpl(QObject *parent) :
     QObject(parent)
-#ifdef Q_WS_WIN32
-    , settings("settings.ini", QSettings::IniFormat)
-#endif
 {
-
-}
-
-void SettingsImpl::loadSettings() {
-
-
 }
 
 void SettingsImpl::setAccount(const SimpleNote::Account &account) {
 
+    SETTINGS;
+
     settings.setValue("account/user", account.user);
-    settings.setValue("account/password", account.password);
+
+    QByteArray pw;
+    pw.append(account.password);
+    settings.setValue("account/password", QString(pw.toBase64()));
 
     emit accountChanged(account);
 
@@ -28,20 +31,37 @@ void SettingsImpl::setAccount(const SimpleNote::Account &account) {
 
 void SettingsImpl::setProxy(const CurlProxy &proxy) {
 
+    SETTINGS;
+
     settings.setValue("proxy/url", proxy.url);
     settings.setValue("proxy/user", proxy.user);
-    settings.setValue("proxy/password", proxy.password);
+    QByteArray pw;
+    pw.append(proxy.password);
+    settings.setValue("proxy/password", QString(pw.toBase64()));
 
     emit proxyChanged(proxy);
 
 }
 
+
+void SettingsImpl::setLastSyncDate(QDateTime dateTime) {
+
+    SETTINGS;
+
+    settings.setValue("sync/lastsync", dateTime.toString());
+}
+
+
 SimpleNote::Account SettingsImpl::getAccount() {
+
+    SETTINGS;
 
     SimpleNote::Account account;
 
     account.user = settings.value("account/user").toString();
-    account.password = settings.value("account/password").toString();
+
+    QByteArray pw = QByteArray::fromBase64(settings.value("account/password").toByteArray());
+    account.password = QString(pw);
 
     return account;
 
@@ -49,12 +69,24 @@ SimpleNote::Account SettingsImpl::getAccount() {
 
 CurlProxy SettingsImpl::getProxy() {
 
+    SETTINGS;
+
     CurlProxy proxy;
 
     proxy.url = settings.value("proxy/url").toString();
     proxy.user = settings.value("proxy/user").toString();
-    proxy.password = settings.value("proxy/password").toString();
+
+    QByteArray pw = QByteArray::fromBase64(settings.value("proxy/password").toByteArray());
+    proxy.password = QString(pw);
 
     return proxy;
+
+}
+
+QDateTime SettingsImpl::getLastSyncDate() {
+
+    SETTINGS;
+
+    return settings.value("sync/lastsync").toDateTime();
 
 }

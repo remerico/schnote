@@ -24,48 +24,48 @@ void NoteItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
     QPoint textPos = option.rect.topLeft();
     QFont textFont = option.font;
 
-    QStyleOptionFocusRect fRect;
+    // Selected item
+    if (option.state & (QStyle::State_Selected) ) {
 
-
-    if (option.state & (QStyle::State_Selected | QStyle::State_MouseOver)) {
+        // Gradient highlight background
         QLinearGradient bgGradient(0, option.rect.top(), 0, option.rect.top() + option.rect.height());
-        bgGradient.setColorAt(0.0, QColor(210, 210, 210));
-        bgGradient.setColorAt(1.0, QColor(60, 60, 60));
-
         QColor hColor = option.palette.highlight().color();
+        bgGradient.setColorAt(0.0, hColor);
+        bgGradient.setColorAt(1.0, hColor.lighter(80));
 
-        bgGradient.setColorAt(0.0, hColor.lighter(180));
-        bgGradient.setColorAt(1.0, hColor);
-
-        //painter->fillRect(option.rect, bgGradient);
-        painter->fillRect(option.rect, option.palette.highlight());
+        painter->fillRect(option.rect, bgGradient);
         textColor = option.palette.highlightedText().color();
     }
     else {
-
-        //painter->fillRect(option.rect, option.palette.background().color());
-
         textColor = option.palette.text().color();
 
-        painter->setPen(QColor(240, 240, 240));
+        // Separator line
+        painter->setPen(option.palette.light().color());
         painter->drawLine(option.rect.bottomLeft(), option.rect.bottomRight());
-
     }
 
     painter->setPen(textColor);
     painter->setFont(textFont);
 
-    int padding = 3;
-    int lineSpacing = option.fontMetrics.lineSpacing();
+    int padding = 5;
 
-    textPos += QPoint(padding, lineSpacing);
-    textFont.setBold(true);
+    // Draw title
+    //textFont.setBold(true);
+    textFont.setPointSize(option.font.pointSize() + 1);
+    textPos += QPoint(padding, QFontMetrics(textFont).lineSpacing());
+
     painter->setFont(textFont);
     painter->drawText(textPos, index.data().toString());
 
-    textPos += QPoint(0, lineSpacing);
+    // Draw value
+    painter->setPen((textColor.value() >= 128) ? textColor.darker(180) : textColor.lighter(180));
+
     textFont.setBold(false);
+    textFont.setPointSize(option.font.pointSize() - 5);
+    textPos += QPoint(0, QFontMetrics(textFont).lineSpacing());
+
     painter->setFont(textFont);
+
     painter->drawText(textPos, index.data(Qt::UserRole).toString());
 
     painter->restore();
@@ -76,7 +76,7 @@ void NoteItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &opti
 
 QSize NoteItemDelegate::sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const {
 
-    int padding = 3;
+    int padding = 5;
     int height = option.fontMetrics.lineSpacing() * 2;
 
     QSize s = QStyledItemDelegate::sizeHint(option, index);

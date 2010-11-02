@@ -3,6 +3,8 @@
 
 #include "../data/settings.h"
 
+long PORT = 3128L;
+
 settingswindow::settingswindow(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::settingswindow)
@@ -32,7 +34,7 @@ settingswindow::~settingswindow()
 void settingswindow::on_buttonBox_clicked(QAbstractButton* button)
 {
     Settings->setAccount(SimpleNote::Account(ui->email->text(), ui->password->text()));
-    Settings->setProxy(CurlProxy(ui->proxyUrl->text(), ui->proxyUser->text(), ui->proxyPassword->text()));
+    Settings->setProxy(CurlProxy(ui->proxyUrl->text(), PORT, ui->proxyUser->text(), ui->proxyPassword->text()));
 
     close();
 }

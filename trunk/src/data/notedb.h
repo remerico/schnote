@@ -30,7 +30,7 @@ public:
     NoteIndex getNoteIndexById(int id);
     void setAllSynchronized();
 
-    void sendRefreshSignal();
+    //void sendRefreshSignal();
 
 
 private:
@@ -44,10 +44,10 @@ private:
     NoteIndexList _getIndicesFromQuery(const QString &queryString);
 
 signals:
-    void dataRefreshed();
-    void noteAdded(const Note &note);
-    void noteUpdated(const Note &note);
-    void noteKeyDeleted(const QString &key);
+    //void dataRefreshed();
+    //void noteAdded(const Note &note);
+    //void noteUpdated(const Note &note);
+    //void noteKeyDeleted(const QString &key);
 
 public slots:
 

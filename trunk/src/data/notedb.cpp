@@ -24,14 +24,14 @@ int NoteDBImpl::addNote(Note note) {
 
     query.bindValue(":key", note.index.key);
     query.bindValue(":title", note.index.title);
-    query.bindValue(":data", note.data);
+    query.bindValue(":data", note.content);
     query.bindValue(":modifyDate", note.index.modifyDate.toString(Qt::ISODate));
     query.bindValue(":creationDate", note.index.creationDate.toString(Qt::ISODate));
     query.bindValue(":deleted", (note.index.deleted ? "1" : "0"));
     query.bindValue(":changed", "1");
 
     if (query.exec()) {
-        emit noteAdded(note);
+        //emit noteAdded(note);
         return query.lastInsertId().toInt();
     }
 
@@ -70,7 +70,7 @@ void NoteDBImpl::updateNote(Note note, bool updateTimeStamp) {
 
         query.bindValue(":key", note.index.key);
         query.bindValue(":title", note.index.title);
-        query.bindValue(":data", note.data);
+        query.bindValue(":data", note.content);
         query.bindValue(":modifyDate", note.index.modifyDate.toString(Qt::ISODate));
         query.bindValue(":creationDate", note.index.creationDate.toString(Qt::ISODate));
         query.bindValue(":deleted", (note.index.deleted ? "1" : "0"));
@@ -80,7 +80,7 @@ void NoteDBImpl::updateNote(Note note, bool updateTimeStamp) {
 
         query.exec();
 
-        emit noteUpdated(note);
+        //emit noteUpdated(note);
         qDebug() << "DB note updated: " << note.index.title;
     }
 }
@@ -107,7 +107,7 @@ void NoteDBImpl::removeNoteById(int id, bool permanent) {
     query.bindValue(":id", QString::number(id));
     query.exec();
 
-    if (!noteKeyToBeDeleted.isEmpty()) emit noteKeyDeleted(noteKeyToBeDeleted);
+    //if (!noteKeyToBeDeleted.isEmpty()) emit noteKeyDeleted(noteKeyToBeDeleted);
 
 }
 
@@ -143,10 +143,10 @@ NoteIndexList NoteDBImpl::_getIndicesFromQuery(const QString &queryString) {
 }
 
 
-NoteIndexHash NoteDBImpl::getNoteIndicesWithKeys(bool changed) {
+NoteIndexHash NoteDBImpl::getNoteIndicesWithKeys(bool includeChanged) {
     QSqlQuery query;
 
-    query.exec("select * from noteindices where key <> \"\"" + (changed ? QString(" and changed = '1'") : "")  );
+    query.exec("select * from noteindices where key <> \"\"" + (includeChanged ? QString(" and changed = '1'") : "")  );
 
     NoteIndexHash noteIdxHash;
 
@@ -188,7 +188,7 @@ NoteIndexList NoteDBImpl::getNoteIndices(bool includeDeleted) {
 
 NoteIndexList NoteDBImpl::getNoteIndicesWithoutKeys() {
     qDebug() << "getNoteIndicesWithoutKeys()";
-    return _getIndicesFromQuery("select * from noteindices where key = \"\" or key is NULL");
+    return _getIndicesFromQuery("select * from noteindices where (key = \"\" or key is NULL) and deleted = 0");
 }
 
 NoteIndexList NoteDBImpl::getDeletedNoteIndices() {
@@ -204,7 +204,7 @@ NoteIndex NoteDBImpl::getNoteIndexById(int id) {
 
 Note NoteDBImpl::getNoteById(int id) {
 
-    QSqlQuery query;
+     QSqlQuery query;
 
     query.exec(QString("select * from notes where id = '%1'").arg(QString::number(id)));
 
@@ -235,9 +235,9 @@ void NoteDBImpl::setAllSynchronized() {
     query.exec("update notes set changed = '0'");
 }
 
-void NoteDBImpl::sendRefreshSignal() {
-    emit dataRefreshed();
-}
+//void NoteDBImpl::sendRefreshSignal() {
+//    emit dataRefreshed();
+//}
 
 bool NoteDBImpl::_createConnection() {
 
@@ -268,7 +268,20 @@ void NoteDBImpl::_createTables() {
                     "modifyDate text, "
                     "creationDate text, "
                     "deleted int, "
-                    "changed int)");
+                    "changed int, "
+                    "pinned int)");
+
+    query.exec("create table tags ("
+                    "id integer primary key, "
+                    "tag varchar(128) unique)");
+
+    query.exec("create table tagmap ("
+                    "id integer primary key, "
+                    "note_id int, "
+                    "tag_id int)");
+
+    query.exec("create view tagview as "
+                    "select nt.*, tg.* from notes nt join tagmap tm on nt.id = tm.note_id join tags tg on tg.id = tm.tag_id");
 
     query.exec("create view noteindices as "
                     "select id, key, substr(data, 1, 255) as \"summary\", modifyDate, creationDate, deleted, changed from notes");

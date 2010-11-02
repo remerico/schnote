@@ -29,15 +29,15 @@ QVariant NoteListModel::data(const QModelIndex &index, int role) const {
     else if (role == Qt::UserRole) {
 
         // TODO: Optimize this
-        int maxLength = 60;
+        //int maxLength = 60;
         QString data = noteIndexList.at(index.row()).summary.trimmed();
 
-        if (data.length() > maxLength) {
-            int idx = data.indexOf("\n");
-            if (idx < 0) idx = maxLength;
-            data.truncate(qMin(idx, maxLength));
-            data.append("...");
-        }
+        //if (data.length() > maxLength) {
+          //  int idx = data.indexOf("\n");
+          //  if (idx < 0) idx = maxLength;
+          //  data.truncate(qMin(idx, maxLength));
+          //  data.append("...");
+        //}
 
         return data;
     }
@@ -56,8 +56,8 @@ QVariant NoteListModel::headerData(int section, Qt::Orientation orientation, int
         return QString("Row %1").arg(section);
 }
 
-void NoteListModel::appendNote(const Note &note) {
-    if (!note.data.isEmpty())
+int NoteListModel::appendNote(const Note &note) {
+    if (!note.content.isEmpty())
     {
         // Return ID from database
         NoteIndex noteIndex = note.index;
@@ -66,10 +66,14 @@ void NoteListModel::appendNote(const Note &note) {
         beginInsertRows(QModelIndex(), noteIndexList.count(), noteIndexList.count());
         noteIndexList.append(noteIndex);
         endInsertRows();
+
+        return noteIndex.id;    // return note ID in the database
     }
+
+    return -1;
 }
 
-void NoteListModel::appendNote(const NoteList &list) {
+QList<int> NoteListModel::appendNote(const NoteList &list) {
 
     if (list.count() > 0) {
 
@@ -91,11 +95,14 @@ void NoteListModel::appendNote(const NoteList &list) {
         noteIndexList.append(indexList);
         endInsertRows();
 
+        return idList;       //return list of note ID from the database
     }
+
+    return QList<int>();
 }
 
-void NoteListModel::insertNote(const Note &note, int row) {
-    if (!note.data.isEmpty())
+int NoteListModel::insertNote(const Note &note, int row) {
+    if (!note.content.isEmpty())
     {
         NoteIndex noteIndex = note.index;
         noteIndex.id = NoteDB->addNote(note);
@@ -103,17 +110,37 @@ void NoteListModel::insertNote(const Note &note, int row) {
         beginInsertRows(QModelIndex(), row, row);
         noteIndexList.insert(row, noteIndex);
         endInsertRows();
+
+        return noteIndex.id;
     }
+
+    return -1;
 }
 
-void NoteListModel::editNote(const Note &note, int row) {
-    if (!note.data.isEmpty())
+int NoteListModel::editNote(const Note &note, int row) {
+    if (!note.content.isEmpty() && note.index.id >= 0)
     {
         NoteDB->updateNote(note);
 
+        if (row == -1) {
+            int count = noteIndexList.count();
+            for(int i = -1; ++i < count;) {
+                if (noteIndexList.at(i).id == note.index.id) {
+                    row = i;
+                    break;
+                }
+            }
+        }
+        Q_ASSERT(row != -1);     // First time I've used an ASSERT. Seriously.
+
         noteIndexList[row] = note.index;
+
         dataChanged(QModelIndex(), QModelIndex());
+
+        return note.index.id;
     }
+
+    return -1;
 }
 
 void NoteListModel::removeNote(int row) {
@@ -125,6 +152,22 @@ void NoteListModel::removeNote(int row) {
     beginRemoveRows(QModelIndex(), row, row);
     noteIndexList.removeAt(row);
     endRemoveRows();
+}
+
+void NoteListModel::removeNoteById(int id) {
+
+    NoteDB->removeNoteById(id);
+
+    int count = noteIndexList.count();
+    for(int i = -1; ++i <= count;) {
+        if (noteIndexList.at(i).id == id) {
+            beginRemoveRows(QModelIndex(), i, i);
+            noteIndexList.removeAt(i);
+            endRemoveRows();
+            break;
+        }
+    }
+
 }
 
 Note NoteListModel::noteData(const QModelIndex &index) const {

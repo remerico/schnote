@@ -3,7 +3,7 @@
 
 #include <QtGui>
 
-class NoteTextEdit : public QTextEdit
+class NoteTextEdit : public QPlainTextEdit
 {
     Q_OBJECT
 public:

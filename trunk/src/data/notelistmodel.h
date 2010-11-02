@@ -30,12 +30,13 @@ private:
 signals:
 
 public slots:
-    void appendNote(const Note &note);
-    void appendNote(const NoteList &list);
-    void insertNote(const Note &note, int row);
-    void editNote(const Note &note, int row);
+    int appendNote(const Note &note);
+    QList<int> appendNote(const NoteList &list);
+    int insertNote(const Note &note, int row = -1);
+    int editNote(const Note &note, int row = -1);
     void search(const QString &search);
     void removeNote(int row);
+    void removeNoteById(int id);
     void refreshData();
 
 };

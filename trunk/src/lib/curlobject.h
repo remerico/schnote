@@ -22,15 +22,17 @@
 
 struct CurlProxy {
     CurlProxy() { }
-    CurlProxy(const QString &url, const QString &user, const QString &password) {
+    CurlProxy(const QString &url, long port = 3128L, const QString &user = "", const QString &password = "") {
         this->url = url;
         this->user = user;
         this->password = password;
+        this->port = port;
     }
 
     QString url;
     QString user;
     QString password;
+    long port;
     bool isEmpty() { return url.isEmpty(); }
 };
 
@@ -43,7 +45,7 @@ public:
     void initialize();
 
     void setUrl(const char* url);
-    void setPostData(const char* data);
+    void setPostData(const QString& data);
     void setEncodedPostData(const QString& data);
 
     inline QString getResponseBody() { return QString(_buffer); };
